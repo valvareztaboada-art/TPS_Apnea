@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 TPS - Apnea-ECG: exploracion inicial de la base de datos
 =========================================================
