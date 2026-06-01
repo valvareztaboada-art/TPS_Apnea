@@ -166,8 +166,8 @@ mR = (pt['picos_R'] >= i0v) & (pt['picos_R'] < i1v)
 mI = (pt['picos_int'] >= i0v) & (pt['picos_int'] < i1v)
 axes[4].plot(t[pt['picos_int'][mI]], pt['integrada'][pt['picos_int'][mI]],
              'rv', label='picos sobre integrador')
-axes[4].axhline(pt['umbral'], color='k', linestyle='--', alpha=0.6,
-                label=f'umbral = {pt["umbral"]:.1f}')
+axes[4].plot(t[i0v:i1v], pt['umbral'][i0v:i1v], 'k--', alpha=0.6,
+             label='umbral local')
 borde_seg = PT_GUARDA_BORDE_MS/1000
 axes[4].axvspan(t[i0v], t[i0v] + borde_seg, alpha=0.15, color='gray')
 axes[4].axvspan(t[i1v-1] - borde_seg, t[i1v-1], alpha=0.15, color='gray',
@@ -182,7 +182,8 @@ plt.tight_layout(); plt.show()
 
 print(f'  QRS detectados en {DURACION_MIN} min : {len(pt["picos_R"])}')
 print(f'  FC media estimada    : {len(pt["picos_R"])/DURACION_MIN:.1f} lpm')
-print(f'  Umbral adaptativo    : {pt["umbral"]:.2f}')
+print(f'  Umbral local         : {pt["umbral"].min():.1f} - {pt["umbral"].max():.1f} '
+      f'(media {pt["umbral"].mean():.1f})')
 
 
 # Comparacion contra .qrs de la base

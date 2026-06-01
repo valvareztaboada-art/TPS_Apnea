@@ -38,6 +38,14 @@ PT_VENTANA_INT_MS = 150
 PT_REFRACTARIO_MS = 200
 PT_ADAPT_ALPHA = 0.3
 PT_GUARDA_BORDE_MS = 200
+# Ventana del umbral adaptativo LOCAL. El umbral se recalcula cada
+# PT_VENTANA_UMBRAL_SEG segundos y se suaviza para evitar saltos abruptos.
+# Sin esto, en registros donde la amplitud del QRS varia mucho a lo largo
+# de la noche (electrodos flojos, cambios posturales) el umbral global se
+# calibra a la zona de mayor amplitud y se pierden beats en las zonas de
+# menor amplitud (caso tipico: b03).
+PT_VENTANA_UMBRAL_SEG = 30
+PT_SUAVIZADO_UMBRAL_SEG = 5
 
 # Filtros temporales sobre RR
 RR_MIN_FISIOL = 0.3
@@ -95,20 +103,58 @@ def pt_paso4_integrador(x, fs, ventana_ms=PT_VENTANA_INT_MS):
 
 def pt_detectar_picos(integrada, fs, refractario_ms=PT_REFRACTARIO_MS,
                        alpha=PT_ADAPT_ALPHA,
-                       guarda_borde_ms=PT_GUARDA_BORDE_MS):
-    """Deteccion adaptativa: umbral = mediana + alpha * (P99 - mediana).
-    Enmascara los bordes para evitar artefactos de convolucion."""
+                       guarda_borde_ms=PT_GUARDA_BORDE_MS,
+                       ventana_umbral_seg=PT_VENTANA_UMBRAL_SEG,
+                       suavizado_umbral_seg=PT_SUAVIZADO_UMBRAL_SEG):
+    """Deteccion adaptativa LOCAL.
+
+    Para cada ventana de `ventana_umbral_seg` segundos, calcula:
+        umbral_local = mediana_ventana + alpha * (P99_ventana - mediana_ventana)
+
+    Los umbrales se suavizan despues con una convolucion de
+    `suavizado_umbral_seg` segundos para evitar saltos abruptos entre
+    ventanas. Asi el detector se adapta a cambios de amplitud a lo largo del
+    registro (electrodos flojos, cambios posturales, ruido transitorio).
+
+    Si el registro es muy corto para hacer ventanas, cae a un umbral global.
+
+    Devuelve (picos, umbrales) donde `umbrales` es un array del mismo largo
+    que `integrada` con el umbral usado en cada muestra (util para graficar).
+    """
+    N = len(integrada)
     distancia = int(refractario_ms * fs / 1000)
     borde = int(guarda_borde_ms * fs / 1000)
-    noise = float(np.median(integrada))
-    peak = float(np.percentile(integrada, 99))
-    altura = noise + alpha * (peak - noise)
-    integrada_mask = integrada.copy()
+    win_n = int(ventana_umbral_seg * fs)
+
+    if win_n <= 0 or N < 2 * win_n:
+        # Fallback: umbral global
+        noise = float(np.median(integrada))
+        peak = float(np.percentile(integrada, 99))
+        umbrales = np.full(N, noise + alpha * (peak - noise))
+    else:
+        # Umbral en ventanas no solapadas
+        umbrales = np.zeros(N)
+        for i in range(0, N, win_n):
+            j = min(i + win_n, N)
+            seg = integrada[i:j]
+            noise = float(np.median(seg))
+            peak = float(np.percentile(seg, 99))
+            umbrales[i:j] = noise + alpha * (peak - noise)
+        # Suavizar transiciones entre ventanas
+        suav_n = int(suavizado_umbral_seg * fs)
+        if suav_n > 1:
+            kernel = np.ones(suav_n) / suav_n
+            umbrales = np.convolve(umbrales, kernel, mode='same')
+
+    # Enmascarar bordes y encontrar todos los picos respetando refractario
+    integrada_busqueda = integrada.copy()
     if borde > 0:
-        integrada_mask[:borde] = -np.inf
-        integrada_mask[-borde:] = -np.inf
-    picos, _ = sg.find_peaks(integrada_mask, distance=distancia, height=altura)
-    return picos, altura
+        integrada_busqueda[:borde] = -np.inf
+        integrada_busqueda[-borde:] = -np.inf
+    todos_picos, _ = sg.find_peaks(integrada_busqueda, distance=distancia)
+    # Filtrar por el umbral local en la ubicacion de cada pico candidato
+    picos = todos_picos[integrada[todos_picos] > umbrales[todos_picos]]
+    return picos, umbrales
 
 
 def pt_refinar_a_R(picos_int, ecg_filtrado, fs, ventana_ms=75):
