@@ -151,12 +151,113 @@ def features_frecuencia(rr, t_rr):
 
 
 # =============================================================================
+# EDR (ECG-Derived Respiration)
+# =============================================================================
+# La amplitud de los QRS se modula con la respiracion por dos razones fisicas:
+#  - al inhalar/exhalar cambia la posicion del corazon respecto al electrodo,
+#  - al inhalar/exhalar cambia la impedancia toracica.
+# Resultado: la serie de amplitudes de R (una por latido) contiene la senal
+# respiratoria. En un sujeto sano hay un pico claro en 0.15-0.4 Hz (12-24 rpm).
+# Durante un evento apneico:
+#  - cae la potencia respiratoria (no hay respiracion).
+#  - aparece un ciclo lento de ~0.01-0.04 Hz (apneas que se repiten cada
+#    30-60 s con la misma frecuencia que la CVHR en el RR).
+# Por eso EDR + HRV (RR) suelen ser complementarios para detectar apnea.
+
+# Bandas en la PSD del EDR
+BAND_EDR_RESP = (0.15, 0.40)    # respiratoria normal
+BAND_EDR_APNEA = (0.01, 0.04)   # modulacion apneica lenta
+
+
+def amplitudes_R(ecg_filtrado, picos_R, fs, ventana_ms=25):
+    """Calcula la amplitud del ECG en cada R detectado.
+
+    Toma el maximo en una ventana de +-ventana_ms alrededor de cada pico,
+    para tolerar pequenas desalineaciones del detector.
+
+    Parameters
+    ----------
+    ecg_filtrado : np.ndarray
+        ECG con filtros pasaaltos + pasabajos aplicados (NO Pan-Tompkins).
+    picos_R : np.ndarray
+        Indices de los picos R.
+    fs : int
+        Frecuencia de muestreo.
+
+    Returns
+    -------
+    np.ndarray
+        Amplitudes (una por R), mismo largo que picos_R.
+    """
+    n = int(ventana_ms * fs / 1000)
+    amps = np.zeros(len(picos_R), dtype=float)
+    L = len(ecg_filtrado)
+    for i, r in enumerate(picos_R):
+        s = max(0, r - n)
+        e = min(L, r + n + 1)
+        amps[i] = float(np.max(ecg_filtrado[s:e]))
+    return amps
+
+
+def features_edr(amplitudes, t_picos):
+    """Features espectrales del EDR.
+
+    Parameters
+    ----------
+    amplitudes : np.ndarray
+        Serie de amplitudes de R en la ventana.
+    t_picos : np.ndarray
+        Tiempo (s) de cada R en la ventana. Mismo largo que amplitudes.
+
+    Returns
+    -------
+    dict
+        edr_resp_power, edr_apnea_power, edr_resp_norm, edr_apnea_norm,
+        edr_apnea_resp_ratio. Si hay datos insuficientes devuelve NaNs.
+    """
+    nan_result = {
+        'edr_resp_power': np.nan,
+        'edr_apnea_power': np.nan,
+        'edr_resp_norm': np.nan,
+        'edr_apnea_norm': np.nan,
+        'edr_apnea_resp_ratio': np.nan,
+    }
+    if len(amplitudes) < 10:
+        return nan_result
+
+    f, psd = lomb_psd(amplitudes, t_picos, f_min=0.005, f_max=0.5, n_freqs=256)
+    if len(f) == 0:
+        return nan_result
+
+    resp = band_power(f, psd, *BAND_EDR_RESP)
+    apnea = band_power(f, psd, *BAND_EDR_APNEA)
+    total = band_power(f, psd, 0.005, 0.5)
+
+    if np.isnan(total) or total <= 0:
+        return nan_result
+
+    resp_norm = resp / total if not np.isnan(resp) else np.nan
+    apnea_norm = apnea / total if not np.isnan(apnea) else np.nan
+    apnea_resp_ratio = (apnea / resp) if (not np.isnan(resp) and resp > 0
+                                            and not np.isnan(apnea)) else np.nan
+
+    return {
+        'edr_resp_power': resp,
+        'edr_apnea_power': apnea,
+        'edr_resp_norm': resp_norm,
+        'edr_apnea_norm': apnea_norm,
+        'edr_apnea_resp_ratio': apnea_resp_ratio,
+    }
+
+
+# =============================================================================
 # Funcion principal: features para cada minuto del registro
 # =============================================================================
 
 def features_por_minuto(picos_R, rr_interp, fs, duracion_s,
+                         amplitudes_picos=None,
                          ventana_freq_seg=300):
-    """Calcula features HRV para cada minuto de un registro.
+    """Calcula features HRV (y opcionalmente EDR) para cada minuto.
 
     Parameters
     ----------
@@ -169,18 +270,22 @@ def features_por_minuto(picos_R, rr_interp, fs, duracion_s,
         Frecuencia de muestreo.
     duracion_s : float
         Duracion total del registro en segundos.
+    amplitudes_picos : np.ndarray, opcional
+        Amplitud del ECG en cada R (mismo largo que picos_R). Si se pasa,
+        se calculan tambien features EDR por minuto. Si es None, EDR queda
+        sin computar (las columnas no aparecen en el output).
     ventana_freq_seg : int
         Tamano (en segundos) de la ventana CENTRADA usada para el calculo
-        de features espectrales. Default 300 (5 min).
+        de features espectrales (HRV y EDR). Default 300 (5 min).
 
     Returns
     -------
-    pd.DataFrame con una fila por minuto, columna 'minute' como indice
-    posicional (no se setea como indice de DataFrame). Cada fila tiene
-    todas las features de tiempo y frecuencia.
+    pd.DataFrame con una fila por minuto.
     """
     t_rr = picos_R[1:] / fs       # tiempo (s) del final de cada RR
+    t_R = picos_R / fs            # tiempo (s) de cada R
     n_minutos = int(duracion_s // 60)
+    incluir_edr = amplitudes_picos is not None
 
     rows = []
     for m in range(n_minutos):
@@ -188,17 +293,27 @@ def features_por_minuto(picos_R, rr_interp, fs, duracion_s,
         mask_t = (t_rr >= m * 60) & (t_rr < (m + 1) * 60)
         rr_t = rr_interp[mask_t]
 
-        # Ventana centrada de ventana_freq_seg segundos para espectro
+        # Ventana centrada de ventana_freq_seg segundos para espectro HRV
         t_centro = (m + 0.5) * 60
-        mask_f = ((t_rr >= t_centro - ventana_freq_seg / 2)
-                  & (t_rr < t_centro + ventana_freq_seg / 2))
+        t_lo = t_centro - ventana_freq_seg / 2
+        t_hi = t_centro + ventana_freq_seg / 2
+        mask_f = (t_rr >= t_lo) & (t_rr < t_hi)
         rr_f = rr_interp[mask_f]
         t_rr_f = t_rr[mask_f]
 
-        rows.append({
+        fila = {
             'minute': m,
             **features_tiempo(rr_t),
             **features_frecuencia(rr_f, t_rr_f),
-        })
+        }
+
+        # EDR: misma ventana centrada de 5 min, sobre las amplitudes de R
+        if incluir_edr:
+            mask_R_f = (t_R >= t_lo) & (t_R < t_hi)
+            amps_f = amplitudes_picos[mask_R_f]
+            t_R_f = t_R[mask_R_f]
+            fila.update(features_edr(amps_f, t_R_f))
+
+        rows.append(fila)
 
     return pd.DataFrame(rows)

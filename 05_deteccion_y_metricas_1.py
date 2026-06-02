@@ -48,10 +48,22 @@ if HERE not in sys.path:
 CACHE_DIR = 'cache'
 
 # Features usadas por cada tecnica
-# T1 usa cvhr_power (la mas discriminante: A/N = 2.78x vs 1.56x de cvhr_norm)
-T1_FEATURE = 'cvhr_power'
+# T1: cvhr_norm (HRV solo, single feature: muestra el minimo viable)
+# T2: AND de cvhr_norm y lf_hf_ratio (HRV combinada)
+# T3: distancia a centroides MULTIMODAL (HRV + EDR). EDR aporta info
+#     respiratoria complementaria: durante apnea cae edr_resp_norm y sube
+#     edr_apnea_resp_ratio, ortogonalmente a las features HRV.
+T1_FEATURE = 'cvhr_norm'
 T2_FEATURES = ('cvhr_norm', 'lf_hf_ratio')
-T3_FEATURES = ['cvhr_norm', 'lf_hf_ratio', 'sdnn', 'rmssd']
+T3_FEATURES = ['cvhr_norm', 'lf_hf_ratio', 'sdnn',
+               'edr_apnea_resp_ratio', 'edr_resp_norm']
+
+# Sujetos sospechosos para analisis de sensibilidad (NO se excluyen del
+# analisis principal, solo se reportan metricas con y sin ellos).
+# c03 y c08 muestran outliers altos en el batch y consistentemente AHI alto
+# en todas las tecnicas. Podrian tener apnea subclinica no anotada o
+# variabilidad CVHR genuina por otras causas.
+SUJETOS_SOSPECHOSOS = ['c03', 'c08']
 
 # Thresholds de AHI por defecto (los del CinC 2000 / Penzel 2000):
 #   >= 100 minutos predichos como A -> clase A (apnea)
@@ -367,7 +379,71 @@ def main():
         print(cm.to_string())
         n_ok = int((learning_sub['clase_real'] == learning_sub[f'clase_{tec}']).sum())
         n_tot = len(learning_sub)
-        print(f'  Accuracy: {n_ok}/{n_tot} = {100*n_ok/n_tot:.1f}%')
+        print(f'  Accuracy ternaria: {n_ok}/{n_tot} = {100*n_ok/n_tot:.1f}%')
+
+    # =========================================================
+    # METRICAS BINARIAS (la pregunta clinica real)
+    # =========================================================
+    print()
+    print('=' * 70)
+    print('Metricas binarias en learning set')
+    print('=' * 70)
+    print('La clase B es ambigua por definicion clinica (paper original).')
+    print('Las preguntas clinicas reales son binarias: "tiene apnea o no?"')
+    print()
+
+    def calc_binaria(sub, tec, clase_pos):
+        y_true = (sub['clase_real'] == clase_pos).astype(int).values
+        y_pred = (sub[f'clase_{tec}'] == clase_pos).astype(int).values
+        return metricas_binarias(y_true, y_pred)
+
+    for clase_pos, descripcion in [('A', 'A vs no-A (detectar apnea)'),
+                                    ('C', 'C vs no-C (descartar apnea)')]:
+        print(f'\n  >>> {descripcion}')
+        print(f'  {"Tecnica":<8s} {"Sens":>7s} {"Spec":>7s} {"Acc":>7s}')
+        for tec in ['T1', 'T2', 'T3', 'ENS']:
+            m = calc_binaria(learning_sub, tec, clase_pos)
+            print(f'  {tec:<8s} {100*m["sens"]:>6.1f}% {100*m["spec"]:>6.1f}% '
+                  f'{100*m["acc"]:>6.1f}%')
+
+    # =========================================================
+    # ANALISIS DE SENSIBILIDAD: con vs sin sospechosos
+    # =========================================================
+    sospechosos_en_data = [s for s in SUJETOS_SOSPECHOSOS
+                            if s in learning_sub['record'].values]
+    if sospechosos_en_data:
+        print()
+        print('=' * 70)
+        print(f'Analisis de sensibilidad: excluyendo {sospechosos_en_data}')
+        print('=' * 70)
+        print('Estos sujetos muestran AHI alto consistentemente. Posibles causas:')
+        print('  - Apneas subclinicas no anotadas en la base.')
+        print('  - Variabilidad CVHR por otras causas (fatiga, edad).')
+        print('  - Outliers temporales (script 03b: c03 con 28% outliers).')
+        print('NO se excluyen del analisis principal (seria cherry-picking)')
+        print('pero se reporta el delta para entender su impacto.\n')
+
+        learning_sin = learning_sub[~learning_sub['record'].isin(SUJETOS_SOSPECHOSOS)]
+        n_full = len(learning_sub)
+        n_sin = len(learning_sin)
+
+        print(f'  Sujetos: {n_full} (full) -> {n_sin} (filtrado)\n')
+        print(f'  {"Tecnica":<8s} {"Acc ternaria":>14s} {"Acc binaria A":>15s} {"Acc binaria C":>15s}')
+        print(f'  {"":8s} {"full / filt":>14s} {"full / filt":>15s} {"full / filt":>15s}')
+        for tec in ['T1', 'T2', 'T3', 'ENS']:
+            # Ternaria
+            acc_full = (learning_sub['clase_real'] == learning_sub[f'clase_{tec}']).sum() / n_full
+            acc_sin = (learning_sin['clase_real'] == learning_sin[f'clase_{tec}']).sum() / n_sin
+            # Binaria A
+            mA_full = calc_binaria(learning_sub, tec, 'A')
+            mA_sin = calc_binaria(learning_sin, tec, 'A')
+            # Binaria C
+            mC_full = calc_binaria(learning_sub, tec, 'C')
+            mC_sin = calc_binaria(learning_sin, tec, 'C')
+            print(f'  {tec:<8s} '
+                  f'{100*acc_full:>5.1f}% / {100*acc_sin:>4.1f}% '
+                  f'{100*mA_full["acc"]:>6.1f}% / {100*mA_sin["acc"]:>4.1f}% '
+                  f'{100*mC_full["acc"]:>6.1f}% / {100*mC_sin["acc"]:>4.1f}%')
 
     # =========================================================
     # DISTRIBUCION EN TEST SET
@@ -397,6 +473,14 @@ def main():
     out_csv = os.path.join(CACHE_DIR, 'clasificacion.csv')
     per_sujeto.to_csv(out_csv, index=False)
     print(f'\nResultados per-sujeto guardados en {out_csv}')
+
+    # Tambien guardamos predicciones per-minuto (para la interfaz grafica)
+    pred_cols = ['record', 'grupo', 'minute', 'label',
+                 'pred_T1', 'pred_T2', 'pred_T3', 'pred_ENS']
+    pred_cols = [c for c in pred_cols if c in df.columns]
+    out_min_csv = os.path.join(CACHE_DIR, 'predicciones_por_minuto.csv')
+    df[pred_cols].to_csv(out_min_csv, index=False)
+    print(f'Predicciones per-minuto guardadas en {out_min_csv}')
 
     # =========================================================
     # VISUALIZACIONES

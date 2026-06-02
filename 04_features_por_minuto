@@ -39,8 +39,10 @@ from src.pipeline import (
     listar_registros,
     clasificar_grupo,
     cargar_anotaciones_apn,
+    cargar_ecg,
+    filtrar_ecg_general,
 )
-from src.features import features_por_minuto
+from src.features import features_por_minuto, amplitudes_R
 
 
 # =============================================================================
@@ -84,11 +86,20 @@ def main():
         print(f'[{i:2d}/{len(registros)}] {r:5s} ...', end=' ', flush=True)
         try:
             data = np.load(cache_path)
+            picos_R = data['picos_R']
+            fs = int(data['fs'])
+
+            # Cargo el ECG, lo filtro y calculo la amplitud en cada R para EDR
+            ecg_raw, _fs_w, _ = cargar_ecg(r, DATA_DIR)
+            ecg_filt = filtrar_ecg_general(ecg_raw, fs)
+            amps_R = amplitudes_R(ecg_filt, picos_R, fs)
+
             df = features_por_minuto(
-                picos_R=data['picos_R'],
+                picos_R=picos_R,
                 rr_interp=data['rr_interp'],
-                fs=int(data['fs']),
+                fs=fs,
                 duracion_s=float(data['duracion_s']),
+                amplitudes_picos=amps_R,
             )
             df['record'] = r
             df['grupo'] = clasificar_grupo(r)
@@ -96,7 +107,6 @@ def main():
             # Etiquetas .apn (si existen - el test set no las tiene)
             try:
                 samples, symbols = cargar_anotaciones_apn(r, DATA_DIR)
-                fs = int(data['fs'])
                 # samples[i] = i * 60 * fs -> indice del minuto = sample / fs / 60
                 labels = {int(s / fs / 60): sym for s, sym in zip(samples, symbols)}
                 df['label'] = df['minute'].map(labels)
@@ -152,16 +162,17 @@ def main():
     train = big_df[big_df['label'].notna()].copy()
     if len(train) > 0:
         print('\nFeatures medias Normal vs Apnea (learning set):')
-        comp = train.groupby('label').agg({
-            'mean_hr': 'mean',
-            'sdnn': 'mean',
-            'rmssd': 'mean',
-            'lf_power': 'mean',
-            'hf_power': 'mean',
-            'lf_hf_ratio': 'mean',
-            'cvhr_power': 'mean',
-            'cvhr_norm': 'mean',
-        }).round(4)
+        cols_compare = ['mean_hr', 'sdnn', 'rmssd',
+                         'lf_power', 'hf_power', 'lf_hf_ratio',
+                         'cvhr_power', 'cvhr_norm']
+        # EDR si esta presente
+        edr_cols = [c for c in ['edr_resp_power', 'edr_apnea_power',
+                                  'edr_resp_norm', 'edr_apnea_norm',
+                                  'edr_apnea_resp_ratio']
+                    if c in train.columns]
+        cols_compare += edr_cols
+
+        comp = train.groupby('label')[cols_compare].mean().round(4)
         print(comp.to_string())
 
         # Diferencia relativa: que features distinguen mejor las clases?
@@ -172,7 +183,7 @@ def main():
             for name in diff_sorted.index:
                 v = diff[name]
                 marker = '  ***' if abs(v - 1) > 0.3 else ('  *' if abs(v - 1) > 0.1 else '')
-                print(f'  {name:18s}: A/N = {v:.3f}{marker}')
+                print(f'  {name:25s}: A/N = {v:.3f}{marker}')
 
 
 if __name__ == '__main__':

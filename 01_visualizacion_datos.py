@@ -74,7 +74,7 @@ from wfdb import processing
 # carpeta con los 70 registros. Aca indicamos el path a esa carpeta.
 #
 # OJO: cambiar DATA_DIR si la carpeta de la base esta en otro lado.
-# Lo mas comodo es dejar este script al lado de la carpeta base_de_datos/.
+# Lo mas comodo es dejar este script al lado de la carpeta apnea-ecg-database-1.0.0/.
 
 DATA_DIR = 'apnea-ecg-database-1.0.0'
 
