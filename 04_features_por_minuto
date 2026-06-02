@@ -1,0 +1,179 @@
+# -*- coding: utf-8 -*-
+"""
+04_features_por_minuto.py
+==========================
+
+Lee el cache/ generado por 03b_procesar_todos.py y calcula features HRV
+por minuto para cada sujeto. Las features siguen el estandar Task Force
+ESC/NASPE 1996 + features especificas de CVHR para apnea.
+
+Salida: cache/features.csv con una fila por (sujeto x minuto).
+
+Columnas del CSV:
+  - record    : id del sujeto (a01, c01, etc.)
+  - grupo     : 'apnea' / 'borderline' / 'control' / 'test'
+  - minute    : numero de minuto (0, 1, 2, ...)
+  - label     : 'A' / 'N' (anotacion de la base) o None para test set
+  - features  : ver src/features.py
+
+Uso:
+    python 04_features_por_minuto.py
+
+Pre-requisito: tener cache/<record>.npz para todos los sujetos. Si no,
+correr antes 03b_procesar_todos.py.
+"""
+
+import os
+import sys
+import time
+import traceback
+
+import numpy as np
+import pandas as pd
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+from src.pipeline import (
+    listar_registros,
+    clasificar_grupo,
+    cargar_anotaciones_apn,
+)
+from src.features import features_por_minuto
+
+
+# =============================================================================
+# Configuracion
+# =============================================================================
+
+DATA_DIR = 'apnea-ecg-database-1.0.0'
+CACHE_DIR = 'cache'
+
+# Para correr solo un subconjunto, definir lista (ej ['a01', 'c01']).
+# Para procesar todo dejar en None.
+SUBSET = None
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    registros = listar_registros(DATA_DIR)
+    if SUBSET is not None:
+        registros = [r for r in registros if r in SUBSET]
+
+    print(f'Calculando features para {len(registros)} sujetos')
+    print(f'Lee de {CACHE_DIR}/<record>.npz')
+    print(f'Guarda en {CACHE_DIR}/features.csv')
+    print()
+
+    t_inicio = time.time()
+    dfs = []
+
+    for i, r in enumerate(registros, 1):
+        t0 = time.time()
+        cache_path = os.path.join(CACHE_DIR, f'{r}.npz')
+
+        if not os.path.exists(cache_path):
+            print(f'[{i:2d}/{len(registros)}] {r:5s}: cache no encontrado, '
+                  f'salteo (corriste 03b_procesar_todos.py?)')
+            continue
+
+        print(f'[{i:2d}/{len(registros)}] {r:5s} ...', end=' ', flush=True)
+        try:
+            data = np.load(cache_path)
+            df = features_por_minuto(
+                picos_R=data['picos_R'],
+                rr_interp=data['rr_interp'],
+                fs=int(data['fs']),
+                duracion_s=float(data['duracion_s']),
+            )
+            df['record'] = r
+            df['grupo'] = clasificar_grupo(r)
+
+            # Etiquetas .apn (si existen - el test set no las tiene)
+            try:
+                samples, symbols = cargar_anotaciones_apn(r, DATA_DIR)
+                fs = int(data['fs'])
+                # samples[i] = i * 60 * fs -> indice del minuto = sample / fs / 60
+                labels = {int(s / fs / 60): sym for s, sym in zip(samples, symbols)}
+                df['label'] = df['minute'].map(labels)
+            except (FileNotFoundError, Exception):
+                df['label'] = None
+
+            dfs.append(df)
+            n_lbl = df['label'].notna().sum() if df['label'].dtype != 'object' \
+                    or df['label'].notna().any() else 0
+            print(f'ok ({len(df)} min, {n_lbl} con label, '
+                  f'{time.time()-t0:.1f}s)')
+        except Exception as e:
+            print(f'ERROR: {e}')
+            traceback.print_exc(limit=2)
+
+    if not dfs:
+        print('No se proceso ningun sujeto.')
+        return
+
+    # Concatenar todos los sujetos
+    big_df = pd.concat(dfs, ignore_index=True)
+
+    # Reordenar columnas: identificadores primero
+    base_cols = ['record', 'grupo', 'minute', 'label']
+    feature_cols = [c for c in big_df.columns if c not in base_cols]
+    big_df = big_df[base_cols + feature_cols]
+
+    out_path = os.path.join(CACHE_DIR, 'features.csv')
+    big_df.to_csv(out_path, index=False)
+
+    print()
+    print('=' * 70)
+    print(f'Done en {time.time()-t_inicio:.1f} s')
+    print(f'Features guardadas en {out_path}')
+    print(f'Total: {len(big_df)} filas (sujetos x minutos), '
+          f'{big_df.shape[1]} columnas')
+    print('=' * 70)
+
+    # Resumen por grupo
+    print('\nResumen por grupo:')
+    summary = big_df.groupby('grupo').agg(
+        n_sujetos=('record', 'nunique'),
+        n_minutos=('minute', 'count'),
+        n_apnea=('label', lambda x: int((x == 'A').sum())),
+        n_normal=('label', lambda x: int((x == 'N').sum())),
+        mean_hr_promedio=('mean_hr', 'mean'),
+        sdnn_promedio=('sdnn', 'mean'),
+        cvhr_norm_promedio=('cvhr_norm', 'mean'),
+    ).round(3)
+    print(summary.to_string())
+
+    # Comparacion Normal vs Apnea sobre el learning set (donde tenemos label)
+    train = big_df[big_df['label'].notna()].copy()
+    if len(train) > 0:
+        print('\nFeatures medias Normal vs Apnea (learning set):')
+        comp = train.groupby('label').agg({
+            'mean_hr': 'mean',
+            'sdnn': 'mean',
+            'rmssd': 'mean',
+            'lf_power': 'mean',
+            'hf_power': 'mean',
+            'lf_hf_ratio': 'mean',
+            'cvhr_power': 'mean',
+            'cvhr_norm': 'mean',
+        }).round(4)
+        print(comp.to_string())
+
+        # Diferencia relativa: que features distinguen mejor las clases?
+        if 'A' in comp.index and 'N' in comp.index:
+            print('\nDiferencia relativa Apnea/Normal por feature:')
+            diff = (comp.loc['A'] / comp.loc['N']).round(3)
+            diff_sorted = diff.abs().sort_values(ascending=False)
+            for name in diff_sorted.index:
+                v = diff[name]
+                marker = '  ***' if abs(v - 1) > 0.3 else ('  *' if abs(v - 1) > 0.1 else '')
+                print(f'  {name:18s}: A/N = {v:.3f}{marker}')
+
+
+if __name__ == '__main__':
+    main()
