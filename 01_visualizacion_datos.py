@@ -1,17 +1,11 @@
 """
-TPS - Apnea-ECG: exploracion inicial de la base de datos
+Exploracion inicial de la base de datos
 =========================================================
 
-Objetivo de este script: este es el primer paso del TPS. Aca *no* resolvemos
-nada del trabajo todavia: lo unico que queremos es VERIFICAR que la base de
-datos se descargo y se descomprimio bien, CARGARLA con wfdb, y VISUALIZAR
-un registro para confirmar que las senales y las anotaciones estan donde
-esperamos que esten.
-
-A partir de aca ya podemos arrancar con lo que pide la profe: trabajar sobre
-los 70 sujetos, comparar al menos 3 tecnicas de deteccion y sacar metricas a
-nivel poblacion. Pero eso es para los scripts siguientes.
-
+Objetivo de este script: Nos permite VERIFICAR que la base de datos se descargo 
+y se descomprimio bien, CARGARLA con wfdb, y VISUALIZAR un registro para confirmar 
+que las señales y las anotaciones estan donde esperamos que esten. 
+Es un paso fundamental antes de empezar a procesar, porque si la base no se carga bien, todo lo que hagamos despues va a estar mal.
 ---
 
 Sobre la base de datos (Penzel et al., Apnea-ECG Database, PhysioNet):
@@ -30,29 +24,11 @@ Sobre la base de datos (Penzel et al., Apnea-ECG Database, PhysioNet):
     respiracion toracica/abdominal (Resp C/A), flujo oronasal (Resp N) y SpO2.
     Vienen en un archivo aparte (rNNr.dat).
 
-Correcciones de la profe:
-  - Hay que justificar la eleccion de la derivacion unica (en realidad esta
-    base tiene una sola, asi que la justificacion sale por descarte).
-  - El analisis final tiene que ser sobre TODOS los sujetos, con metricas a
-    nivel poblacion.
-  - Hay que comparar AL MENOS 3 TECNICAS (combinaciones de features) para
-    detectar los eventos de apnea.
-
-Restricciones de programacion para este TPS (lo avanzado queda para el TP que
-sigue):
-  - No usamos machine learning ni redes neuronales.
-  - No usamos wavelets ni ICA.
-  - Si usamos: numpy, scipy.signal, scipy.fft, scipy.interpolate, matplotlib,
-    wfdb (incluyendo wfdb.processing), pyhrv (mas adelante, cuando HRV).
 """
 
 # =============================================================================
 # 1. Importamos las librerias
 # =============================================================================
-# Las mismas que vimos en el notebook de la materia (ECG_y_HRV), salvo que
-# todavia no usamos pyhrv porque eso lo necesitamos recien cuando empecemos
-# con HRV / deteccion. Hoy alcanza con wfdb + numpy + matplotlib.
-
 import os
 
 import numpy as np
@@ -70,11 +46,7 @@ from wfdb import processing
 # =============================================================================
 # 2. Configuracion: donde esta la base de datos
 # =============================================================================
-# Cuando descargamos el ZIP de PhysioNet y lo descomprimimos, nos queda una
-# carpeta con los 70 registros. Aca indicamos el path a esa carpeta.
-#
-# OJO: cambiar DATA_DIR si la carpeta de la base esta en otro lado.
-# Lo mas comodo es dejar este script al lado de la carpeta apnea-ecg-database-1.0.0/.
+# Comentario: cambiar DATA_DIR si la carpeta de la base esta en otro lado.
 
 DATA_DIR = 'apnea-ecg-database-1.0.0'
 
@@ -145,15 +117,10 @@ for nombre, lista in grupos.items():
 # =============================================================================
 # 4. Cargamos un registro
 # =============================================================================
-# Vamos a tomar un registro del grupo apnea (mucha apnea anotada -> facil de
-# visualizar) y cargar la senal de ECG. wfdb ofrece dos funciones parecidas:
-#   - wfdb.rdsamp(path) -> (signal, fields): signal como array numpy, header
-#     como dict.
-#   - wfdb.rdrecord(path) -> objeto Record con la misma info como atributos.
-# Usamos rdsamp porque es la que aparece en el notebook de la materia.
+# Vamos a tomar un registro del grupo apnea y cargar la senal de ECG. 
 
 REGISTRO = 'a01'                            # <- cambiar para explorar otro sujeto
-path = os.path.join(DATA_DIR, REGISTRO)     # path SIN extension (asi lo espera wfdb)
+path = os.path.join(DATA_DIR, REGISTRO)    
 
 signal, fields = wfdb.rdsamp(path)
 
@@ -193,9 +160,7 @@ print(f'primeros valores       : {ecg[:5]}')
 # =============================================================================
 # 5. Visualizamos un segmento del ECG
 # =============================================================================
-# El registro completo dura varias horas, asi que graficar todo no tiene
-# sentido visual. Vamos a mirar un segmento corto (por ej. 20 segundos) para
-# confirmar que es un ECG y que tiene la forma esperada (QRS claros, etc.).
+# Vamos a mirar un segmento corto para confirmar que es un ECG y que tiene la forma esperada.
 
 t = np.linspace(0, len(ecg)/fs, len(ecg))   # vector tiempo en segundos
 
@@ -212,10 +177,6 @@ plt.ylabel('Amplitud [mV]')
 plt.grid(True, alpha=0.3)
 plt.show()
 
-# Si el grafico muestra una sucesion clara de complejos QRS mas o menos
-# regulares, la senal se cargo bien. Si vemos algo muy ruidoso o una linea
-# plana, hay que revisar el path o el archivo.
-
 
 # =============================================================================
 # 6. Anotaciones de apnea (.apn)
@@ -225,10 +186,8 @@ plt.show()
 #   'N' -> minuto SIN apnea (respiracion normal)
 #   'A' -> minuto CON evento de apnea / hipopnea
 #
-# Las hicieron expertos humanos usando las senales de respiracion (no a
-# partir del ECG). Son el ground truth contra el que vamos a comparar
-# nuestras detecciones mas adelante.
-# Igual que en la clase, se leen con wfdb.rdann.
+# Las hicieron expertos usando las senales de respiracion. Son el ground truth contra el que vamos a comparar
+# nuestras detecciones en el script 05.
 
 ann_apnea = wfdb.rdann(path, 'apn')
 
@@ -250,7 +209,7 @@ print('diff en segundos           :', np.unique(np.diff(ann_apnea.sample))/fs)
 # efectivamente hay una marca por minuto.
 
 # Contamos cuantos minutos son apnea y cuantos normales:
-es_apnea = np.array([s == 'A' for s in ann_apnea.symbol])   # list comp al estilo de la profe
+es_apnea = np.array([s == 'A' for s in ann_apnea.symbol])  
 
 minutos_apnea  = int(es_apnea.sum())
 minutos_normal = int((~es_apnea).sum())
@@ -289,9 +248,7 @@ plt.show()
 # 8. Anotaciones de QRS (.qrs)
 # =============================================================================
 # Ademas de las anotaciones de apnea, cada registro trae un .qrs con las
-# ubicaciones de los QRS detectados AUTOMATICAMENTE por sqrs125. Cuidado:
-# la documentacion aclara que NO estan auditados y pueden tener errores.
-# Para abrir, en lugar de 'apn' pasamos 'qrs'.
+# ubicaciones de los QRS detectados AUTOMATICAMENTE por sqrs125. 
 
 ann_qrs = wfdb.rdann(path, 'qrs')
 
@@ -303,10 +260,7 @@ print('cantidad de QRS detectados :', len(ann_qrs.sample))
 print('primeros simbolos          :', ann_qrs.symbol[:10])
 print('primeras posiciones        :', ann_qrs.sample[:10])
 
-# Los simbolos son todos 'N' (la doc aclara "all beats regardless of type
-# have been labeled normal"). Lo util es ann_qrs.sample con las ubicaciones.
-
-# Frecuencia cardiaca aproximada a partir de los RR (chequeo de sanidad):
+# Frecuencia cardiaca aproximada a partir de los RR:
 rr_muestras = np.diff(ann_qrs.sample)   # diferencias entre QRS consecutivos
 rr_segundos = rr_muestras / fs
 fc_aprox = 60.0 / rr_segundos           # latidos por minuto
@@ -317,9 +271,9 @@ print(f'RR mediano               : {np.median(rr_segundos):.3f} s')
 print(f'FC mediana               : {np.median(fc_aprox):.1f} lpm')
 print(f'FC min / max             : {fc_aprox.min():.1f} / {fc_aprox.max():.1f} lpm')
 
-# Si la FC mediana cae en un rango fisiologico (~50-90 lpm en sueno), la
-# deteccion esta razonablemente bien.
-
+#Queremos ver que FC esté dentro del rango fisiológico esperado (ej. 40-180 lpm) y 
+# que no haya intervalos RR muy cortos (< 0.3 s) o muy largos (> 2 s), lo cual indicaría errores
+# en la detección de QRS.
 
 # =============================================================================
 # 9. Visualizacion integrada: ECG + QRS detectados
@@ -339,12 +293,6 @@ plt.ylabel('Amplitud [mV]')
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()
-
-# Los puntos rojos deberian caer arriba (o muy cerca) de cada pico R. Si hay
-# puntos rojos sin QRS, o picos sin marcar, es porque sqrs125 fallo ahi -
-# coincide con lo que avisa la documentacion.
-# En los scripts siguientes vamos a re-detectar QRS con processing.xqrs_detect
-# o con un Pan-Tompkins implementado por nosotros y comparar.
 
 
 # =============================================================================
@@ -369,7 +317,7 @@ if j1 > len(ecg):
 fig, axes = plt.subplots(2, 1, figsize=(18, 5), sharex=True,
                          gridspec_kw={'height_ratios': [3, 1]})
 
-# Panel 1: ECG (decimado solo para visualizacion, no para analisis)
+# Panel 1: ECG 
 paso = 10
 axes[0].plot(t[j0:j1:paso]/60, ecg[j0:j1:paso], linewidth=0.5)
 axes[0].set_ylabel('ECG [mV]')
@@ -389,91 +337,7 @@ axes[1].grid(True, alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-# Donde la anotacion de abajo este en A deberiamos ver - al menos en a01 -
-# cambios en la variabilidad de la frecuencia cardiaca del ECG. Eso es
-# exactamente lo que vamos a tratar de detectar despues (CVHR).
 
-
-# =============================================================================
-# 11. Registros con senales adicionales (respiracion y SpO2)
-# =============================================================================
-# Solo 8 registros tienen senales adicionales:
-#   a01, a02, a03, a04, b01, c01, c02, c03
-# En esos casos hay un archivo rNNr.dat con 4 canales: Resp C (toracico),
-# Resp A (abdominal), Resp N (oronasal) y SpO2.
-#
-# OJO: estas senales NO las vamos a usar para detectar apnea (el objetivo del
-# TPS es hacerlo SOLO con ECG). Pero sirven para validar visualmente que pasa
-# en un episodio apneico.
-
-REGISTROS_CON_RESP = ['a01', 'a02', 'a03', 'a04', 'b01', 'c01', 'c02', 'c03']
-
-if REGISTRO in REGISTROS_CON_RESP:
-    path_resp = os.path.join(DATA_DIR, REGISTRO + 'r')
-    if os.path.exists(path_resp + '.hea'):
-        sig_resp, fields_resp = wfdb.rdsamp(path_resp)
-
-        print()
-        print('=' * 70)
-        print(f'Senales adicionales - registro {REGISTRO}')
-        print('=' * 70)
-        print('Canales :', fields_resp['sig_name'])
-        print('Unidades:', fields_resp['units'])
-        print('Fs      :', fields_resp['fs'], 'Hz')
-        print('Largo   :', fields_resp['sig_len'], 'muestras')
-
-        fs_r = fields_resp['fs']
-        nombres = fields_resp['sig_name']
-        t_r = np.arange(sig_resp.shape[0]) / fs_r
-
-        # mismo tramo que en la seccion 10 (en minutos)
-        k0 = int(t_inicio_min2*60*fs_r)
-        k1 = k0 + int(duracion_min2*60*fs_r)
-        if k1 > sig_resp.shape[0]:
-            k0 = 0
-            k1 = sig_resp.shape[0]
-
-        fig, axes = plt.subplots(sig_resp.shape[1], 1, figsize=(18, 8), sharex=True)
-        for i in range(sig_resp.shape[1]):
-            axes[i].plot(t_r[k0:k1]/60, sig_resp[k0:k1, i], linewidth=0.5)
-            axes[i].set_ylabel(f'{nombres[i]}\n[{fields_resp["units"][i]}]')
-            axes[i].grid(True, alpha=0.3)
-        axes[0].set_title(f'Senales adicionales - registro {REGISTRO}')
-        axes[-1].set_xlabel('Tiempo [min]')
-        plt.tight_layout()
-        plt.show()
-    else:
-        print(f'\n[aviso] El registro {REGISTRO} deberia tener senales de '
-              f'respiracion pero no encuentro {path_resp}.hea')
-else:
-    print(f'\n[info] El registro {REGISTRO} no tiene senales de respiracion '
-          f'adicionales (solo a01-a04, b01, c01-c03 las tienen).')
-
-
-# =============================================================================
-# 12. Resumen
-# =============================================================================
-# Lo que confirmamos en este script:
-#
-# 1. La carpeta DATA_DIR tiene los 70 registros (35 learning + 35 test).
-# 2. Para un registro del learning set (por defecto a01) podemos:
-#    - Leer la senal de ECG con wfdb.rdsamp -> signal, fields.
-#    - Confirmar fs = 100 Hz, un solo canal, duracion de varias horas.
-#    - Leer las anotaciones de apnea por minuto con wfdb.rdann(path, 'apn').
-#    - Leer las anotaciones de QRS provistas con wfdb.rdann(path, 'qrs').
-#    - Para 8 registros, leer respiracion y SpO2 con wfdb.rdsamp(path + 'r').
-# 3. Visualmente, la senal tiene QRS claros y las marcas .qrs caen sobre los
-#    picos R (con algunos errores conocidos del detector automatico).
-#
-# Proximos pasos (scripts siguientes):
-#   02_preprocesamiento.py  -> filtrado pasa-banda + notch, cubic splines.
-#   03_qrs_y_RR.py          -> Pan-Tompkins propio o processing.xqrs_detect,
-#                              serie RR, limpieza de ectopicos.
-#   04_features_por_minuto.py -> HRV en tiempo, frecuencia (FFT y Lomb-Scargle),
-#                              EDR, todo por ventanas de 1 minuto.
-#   05_deteccion_y_metricas.py -> AL MENOS 3 TECNICAS de deteccion (reglas por
-#                              umbral, sin ML), evaluacion sobre los 70 sujetos,
-#                              metricas a nivel minuto y a nivel sujeto (C/B/A).
 
 print()
 print('=' * 70)
