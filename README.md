@@ -83,12 +83,12 @@ tps_apnea/
   sujeto (a01 por defecto) mostrando todos los pasos intermedios con plots.
   Útil para inspeccionar visualmente el funcionamiento.
 - **`03b_procesar_todos.py`**: corre el pipeline sobre los 70 sujetos y
-  persiste el resultado en `cache/*.npz`. Tarda aprox. 4 minutos. Genera
+  persiste el resultado en `cache/*.npz`. Tarda aprox. 5 minutos. Genera
   también `cache/resumen.csv` con métricas por sujeto comparadas contra la
   referencia oficial `.qrs` de PhysioNet.
 - **`04_features_por_minuto.py`**: lee `cache/`, carga el ECG filtrado, calcula
   amplitudes de R y features HRV+EDR para cada minuto de cada sujeto.
-  Resultado: `cache/features.csv` (~34 000 filas, 26 columnas). Tarda ~9 min.
+  Resultado: `cache/features.csv` (~34 000 filas, 26 columnas). Tarda ~5 min.
 - **`05_deteccion_y_metricas.py`**: implementa las 3 técnicas (T1, T2, T3),
   calibra umbrales sobre el conjunto de entrenamiento, evalúa per-minuto y
   per-sujeto, reporta matrices de confusión y métricas binarias y de
