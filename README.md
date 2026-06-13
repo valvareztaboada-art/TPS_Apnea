@@ -130,30 +130,6 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Descargar la base de datos Apnea-ECG
-
-La base no se incluye en este repositorio. Descargala manualmente desde
-[PhysioNet](https://physionet.org/content/apnea-ecg/1.0.0/) y colocá los
-archivos en el directorio `base_de_datos/`. Los archivos esperados son:
-
-```
-base_de_datos/
-├── a01.dat, a01.hea, a01.apn, a01.qrs
-├── a02.dat, a02.hea, a02.apn, a02.qrs
-├── ...
-├── c10.dat, c10.hea, c10.apn, c10.qrs
-└── x01..x35.{dat,hea,qrs}        (los x* no tienen .apn)
-```
-
-Alternativamente, podés usar la utilidad de WFDB para descargarla:
-
-```bash
-mkdir base_de_datos && cd base_de_datos
-wget -r -np -nH --cut-dirs=4 https://physionet.org/files/apnea-ecg/1.0.0/
-cd ..
-```
-
-
 ## Cómo correrlo
 
 Los scripts están pensados para ejecutarse **en orden** porque cada uno consume
@@ -198,8 +174,7 @@ llegar al resultado.
   mediana local) en lugar de morfológica. La frecuencia de muestreo de la base
   (100 Hz) introduce cuantización temporal de 10 ms en la posición del pico R,
   que es comparable a las diferencias morfológicas reales entre latidos
-  normales y ectópicos. Se descartaron también K-means K=2 y correlación con
-  template promedio.
+  normales y ectópicos. 
 - **Análisis espectral**: se usa **Lomb-Scargle** en lugar de Welch porque la
   serie R–R no está uniformemente muestreada en el tiempo.
 - **Ventana para features espectrales**: 5 minutos centrados en el minuto
@@ -214,9 +189,6 @@ llegar al resultado.
 
 ## Limitaciones conocidas
 
-- En el sujeto x17 el detector Pan-Tompkins muestra sobredetección por descenso
-  excesivo del umbral local en regiones de baja amplitud. Pendiente: agregar
-  un piso al umbral local relativo al global.
 - La frecuencia de muestreo de 100 Hz es relativamente baja para análisis de
   HRV; idealmente la base debería estar a 250 Hz o más. Esto introduce
   cuantización temporal que limita la precisión de las features.
@@ -227,8 +199,6 @@ llegar al resultado.
 
 ## Referencias
 
-Principales referencias bibliográficas en las que se basa el trabajo:
-
 - Penzel *et al.* (2000) — *The Apnea-ECG Database*, Computers in Cardiology.
 - Pan & Tompkins (1985) — *A Real-Time QRS Detection Algorithm*, IEEE TBME.
 - Task Force ESC/NASPE (1996) — *Heart Rate Variability Standards*, Circulation.
@@ -237,8 +207,6 @@ Principales referencias bibliográficas en las que se basa el trabajo:
 - Moody *et al.* (1985) — *Derivation of Respiratory Signals from Multi-Lead
   ECGs*, Computers in Cardiology.
 
-
-## Licencia
 
 [Especificar licencia si aplica, ej. MIT, GPL, etc.]
 
