@@ -208,10 +208,6 @@ llegar al resultado.
   ECGs*, Computers in Cardiology.
 
 
-[Especificar licencia si aplica, ej. MIT, GPL, etc.]
-
-
 ## Autores
 
-[Nombre del/los autor/es] — Trabajo Práctico de Procesamiento de Señales
-Biomédicas, [fecha].
+Victoria Sol Alvarez Taboada - Delfina Gowland - María Paulina Losinno
