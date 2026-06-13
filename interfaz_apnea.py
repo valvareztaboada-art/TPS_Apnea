@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-interfaz_apnea.py
+Interfaz interactiva para visualizacion de resultados
 ==================
 
 Interfaz interactiva (PySide6 + pyqtgraph) para visualizar el pipeline
@@ -28,8 +28,6 @@ Pre-requisitos:
   - cache/clasificacion.csv (de 05_deteccion_y_metricas.py)
   - base_de_datos/<record>.{dat,hea}  (los registros wfdb originales)
 
-Uso:
-    python interfaz_apnea.py
 """
 
 import os
@@ -176,8 +174,7 @@ class MainWindow(QMainWindow):
         # Cargar primer registro automaticamente
         if self.records:
             self.combo_sujeto.setCurrentIndex(0)
-            # Forzar carga (currentTextChanged ya disparado por addItems primero
-            # pero la senal de currentIndexChanged sera mas confiable aca)
+            # Forzar carga 
             self.cargar_registro(self.records[0])
 
     # -------------------------------------------------------------------------
@@ -523,7 +520,6 @@ class MainWindow(QMainWindow):
                 img[i, 0] = (c[0], c[1], c[2], 35)  # alpha bajo
             img_item = pg.ImageItem(img)
             # ImageItem en coordenadas (x: 0..n, y: ymin..ymax)
-            # Vamos a ponerlo en y de -5 a +5 para cubrir el rango z-norm tipico
             img_item.setRect(QtCore.QRectF(0, -6, n, 12))
             img_item.setZValue(-10)
             self.plot_features.addItem(img_item)
@@ -547,7 +543,7 @@ class MainWindow(QMainWindow):
                                      pen=pg.mkPen(color, width=1.5),
                                      name=feat_name)
 
-        # ---- Marcas verticales: minutos con label = 'A' (ground truth) ----
+        # ---- Marcas verticales: minutos con label = 'A'
         if 'label' in self._feat.columns:
             apnea_min = self._feat[self._feat['label'] == 'A']['minute'].values
             if len(apnea_min) > 0:

@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-04_features_por_minuto.py
+Análisis de features por minuto
 ==========================
 
 Lee el cache/ generado por 03b_procesar_todos.py y calcula features HRV
-por minuto para cada sujeto. Las features siguen el estandar Task Force
-ESC/NASPE 1996 + features especificas de CVHR para apnea.
+por minuto para cada sujeto. 
 
 Salida: cache/features.csv con una fila por (sujeto x minuto).
 
@@ -15,9 +14,6 @@ Columnas del CSV:
   - minute    : numero de minuto (0, 1, 2, ...)
   - label     : 'A' / 'N' (anotacion de la base) o None para test set
   - features  : ver src/features.py
-
-Uso:
-    python 04_features_por_minuto.py
 
 Pre-requisito: tener cache/<record>.npz para todos los sujetos. Si no,
 correr antes 03b_procesar_todos.py.

@@ -1,27 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-TPS - Apnea-ECG: analisis espectral y justificacion del filtrado
+Analisis espectral para la justificacion del filtrado
 =================================================================
 
-Objetivo: ver QUE TIENE la señal cruda en banda y de ahi DECIDIR y JUSTIFICAR
+Objetivo de este script: realizar un análisis espectral para así DECIDIR y JUSTIFICAR
 que filtros aplicar en el preprocesamiento (script 03).
 
-La idea no es decidir a ojo "esta sucia / esta limpia", sino mirar la
-densidad espectral de potencia (PSD) con Welch en varios sujetos de distintos
-grupos y verificar:
-
+Se busca mirar la densidad espectral de potencia (PSD) con Welch y verificar:
   1. Cuanta energia hay en 0-0.5 Hz (baseline wander: respiracion, movimiento).
-  2. Donde se concentra la energia del QRS (tipicamente 5-25 Hz).
+  2. Donde se concentra la energia del QRS (5-25 Hz).
   3. Si hay pico de red (50 Hz, porque la base se grabo en Alemania).
   4. Si la PSD del ECG cambia entre minutos de apnea y minutos normales del
-     mismo sujeto (si cambia mucho, hay que tener cuidado al filtrar).
+     mismo sujeto.
 
-El resultado del script es una "lectura" impresa por consola con las
-decisiones de filtrado justificadas, mas las figuras correspondientes que
-van como evidencia en el informe.
-
-Restricciones: solo numpy, scipy.signal, matplotlib, wfdb. Nada de wavelets,
-ICA ni ML.
 """
 
 import os
@@ -34,18 +25,16 @@ import wfdb
 # =============================================================================
 # Configuracion
 # =============================================================================
-
 DATA_DIR = 'apnea-ecg-database-1.0.0'
 
-# Sujetos a comparar: uno de cada grupo, asi el analisis no es anecdotico
+# Sujetos a comparar: uno de cada grupo
 SUJETOS = ['a01', 'c01', 'x01']      # apnea, control, test
 
-# Segmento a analizar: 1 minuto del medio de la noche (asi evitamos los
-# primeros minutos donde suele haber transitorios de colocacion de electrodos)
-MINUTO_REFERENCIA = 30      # minuto a contar desde el inicio del registro
-DURACION_SEG = 60           # 1 minuto
+# Segmento a analizar: 1 minuto del medio de la noche (para evitar transitorios de inicio)
+MINUTO_REFERENCIA = 30     
+DURACION_SEG = 60           
 
-FS = 100                    # Hz (toda la base es a 100 Hz)
+FS = 100                    # Hz (la base se grabo a 100 Hz)
 
 
 # =============================================================================
@@ -53,10 +42,6 @@ FS = 100                    # Hz (toda la base es a 100 Hz)
 # =============================================================================
 
 def cargar_segmento(registro, minuto, duracion_seg, data_dir=DATA_DIR):
-    """Carga `duracion_seg` segundos de ECG empezando en el minuto indicado.
-
-    Devuelve (ecg_1d, fs).
-    """
     path = os.path.join(data_dir, registro)
     sampfrom = int(minuto * 60 * FS)
     sampto = sampfrom + int(duracion_seg * FS)
@@ -65,19 +50,16 @@ def cargar_segmento(registro, minuto, duracion_seg, data_dir=DATA_DIR):
 
 
 def psd_welch(x, fs, nperseg=1024):
-    """Wrapper sobre scipy.signal.welch con parametros sensatos para ECG.
-
+    """
     nperseg=1024 a 100 Hz -> ventanas de 10.24 s.
     Resolucion frecuencial = fs/nperseg ~= 0.098 Hz (suficiente para ver
     baseline wander). Overlap 50% por defecto.
-
-    Devuelve (f, Pxx) en Hz y (mV^2 / Hz) respectivamente.
     """
     return sg.welch(x, fs=fs, nperseg=nperseg, detrend='constant')
 
 
 def potencia_en_banda(f, Pxx, f_min, f_max):
-    """Integra la PSD en una banda [f_min, f_max] (regla del trapecio)."""
+    """Integra la PSD en una banda [f_min, f_max] ."""
     mask = (f >= f_min) & (f <= f_max)
     if not mask.any():
         return 0.0
@@ -96,7 +78,7 @@ print(f'  minuto de inicio  : {MINUTO_REFERENCIA}')
 print(f'  duracion          : {DURACION_SEG} s')
 print('=' * 70)
 
-segmentos = {}      # dict: nombre_registro -> array de ECG (1 minuto)
+segmentos = {}      
 for r in SUJETOS:
     try:
         ecg, fs = cargar_segmento(r, MINUTO_REFERENCIA, DURACION_SEG)
@@ -117,41 +99,8 @@ if not segmentos:
 
 
 # =============================================================================
-# Seccion 2: vista en tiempo del segmento crudo
+# Seccion 2: PSD por Welch - comparacion entre sujetos
 # =============================================================================
-# Esto sirve sobre todo para que veas a ojo si hay deriva visible (baseline
-# wander), saturaciones, o tramos planos. La inspeccion visual nunca alcanza
-# como justificacion, pero es el primer indicio.
-
-t = np.arange(DURACION_SEG * FS) / FS
-
-fig, axes = plt.subplots(len(segmentos), 1,
-                         figsize=(18, 2.2 * len(segmentos)),
-                         sharex=True)
-if len(segmentos) == 1:
-    axes = [axes]
-
-for ax, (r, ecg) in zip(axes, segmentos.items()):
-    ax.plot(t, ecg, linewidth=0.7)
-    ax.axhline(0, color='k', alpha=0.2, linewidth=0.5)
-    ax.set_ylabel(f'{r}\n[mV]')
-    ax.grid(True, alpha=0.3)
-
-axes[0].set_title(
-    f'ECG crudo - segmento de {DURACION_SEG} s desde el minuto {MINUTO_REFERENCIA}'
-)
-axes[-1].set_xlabel('Tiempo [s]')
-plt.tight_layout()
-plt.show()
-
-
-# =============================================================================
-# Seccion 3: PSD por Welch - comparacion entre sujetos
-# =============================================================================
-# Welch divide la señal en ventanas solapadas, calcula el periodograma de cada
-# una y las promedia. Eso reduce la varianza del estimador (un periodograma
-# crudo "vibra" mucho) y permite ver la estructura de fondo.
-
 print()
 print('=' * 70)
 print('Calculo de PSD con metodo de Welch')
@@ -187,11 +136,10 @@ plt.show()
 
 
 # =============================================================================
-# Seccion 4: zoom en baja frecuencia (0 - 2 Hz) - baseline wander
+# Seccion 3: zoom en baja frecuencia (0 - 2 Hz) - baseline wander
 # =============================================================================
-# Aca es donde se ven la respiracion (0.15 - 0.4 Hz aprox), el movimiento
-# corporal (< 0.1 Hz) y la deriva electrodica. Si hay una "joroba" alta en
-# esta zona, hay que aplicar un pasa-altos.
+# Se observa la respiracion (0.15 - 0.4 Hz), el movimiento
+# corporal (< 0.1 Hz) y la deriva electrodica.
 
 plt.figure(figsize=(15, 5))
 for r, (f, Pxx) in psds.items():
@@ -212,13 +160,10 @@ plt.show()
 
 
 # =============================================================================
-# Seccion 5: zoom en alta frecuencia (35 - 50 Hz) - red electrica
+# Seccion 4: zoom en alta frecuencia (35 - 50 Hz) - red electrica
 # =============================================================================
-# La base se grabo en Marburg (Alemania), donde la red es 50 Hz. Pero como
-# muestreamos a 100 Hz, Nyquist es 50 Hz exactos, lo cual significa que el
-# adquisidor TUVO que tener un filtro anti-aliasing por debajo de 50 Hz. Eso
-# en general atenua mucho la red. Si igual aparece un pico aca, hay que
-# sumar un notch.
+# La red es 50 Hz. Pero como muestreamos a 100 Hz, Nyquist es 50 Hz, lo cual significa que el
+# adquisidor tuvo que tener un filtro anti-aliasing por debajo de 50 Hz. Eso en general atenua mucho la red.
 
 plt.figure(figsize=(15, 5))
 for r, (f, Pxx) in psds.items():
@@ -238,15 +183,9 @@ plt.grid(True, which='both', alpha=0.3)
 plt.tight_layout()
 plt.show()
 
-
 # =============================================================================
-# Seccion 6: tabla de potencias por banda
+# Seccion 5: tabla de potencias por banda
 # =============================================================================
-# Numeros concretos para el informe. La idea: si la potencia en 0-0.5 Hz es
-# del mismo orden o mayor que la de la banda QRS, hay baseline serio. Si la
-# de 45-50 Hz es muy chica frente a la del QRS, el anti-aliasing ya hizo su
-# trabajo.
-
 print()
 print('=' * 70)
 print('Potencias integradas por banda (en mV^2)')
@@ -266,19 +205,9 @@ print('  < 0.1  : baseline despreciable -> el pasa-altos es casi cosmetico')
 print('  0.1-1  : baseline notable      -> el pasa-altos ayuda')
 print('  > 1    : baseline domina       -> el pasa-altos es OBLIGATORIO')
 
-
 # =============================================================================
-# Seccion 7: apnea vs normal en el MISMO sujeto (a01)
+# Seccion 6: apnea vs normal en el MISMO sujeto (a01)
 # =============================================================================
-# Queremos asegurarnos de que el filtro elegido no este "comiendose"
-# diferencias que despues vamos a usar para detectar apnea.
-# Comparamos PSD de un minuto anotado 'A' contra uno anotado 'N' en a01.
-#
-# Como la modulacion por apnea se manifiesta en la FRECUENCIA CARDIACA y su
-# variabilidad (-> serie RR -> HRV), y no en la FORMA del latido, esperamos
-# que la PSD del ECG en si sea parecida entre los dos estados. Si fuera muy
-# distinta tendriamos que repensar el filtrado.
-
 if 'a01' in segmentos:
     path_a01 = os.path.join(DATA_DIR, 'a01')
     try:
@@ -288,12 +217,11 @@ if 'a01' in segmentos:
         minutos_n = np.where(~es_apnea)[0]
         minutos_a = np.where(es_apnea)[0]
 
-        # nos saltamos los primeros 5 min por las dudas (transitorios)
+        # no incluímos los primeros 5 min (transitorios)
         minutos_n = minutos_n[minutos_n >= 5]
         minutos_a = minutos_a[minutos_a >= 5]
 
         if len(minutos_n) > 0 and len(minutos_a) > 0:
-            # tomamos uno bien al medio de cada lista
             min_n = int(np.median(minutos_n))
             min_a = int(np.median(minutos_a))
 
@@ -310,7 +238,6 @@ if 'a01' in segmentos:
             f_n, Pxx_n = psd_welch(ecg_n, FS)
             f_a, Pxx_a = psd_welch(ecg_a, FS)
 
-            # imprimimos las potencias en bandas para comparar
             for nombre, f, Pxx in [('Normal', f_n, Pxx_n),
                                     ('Apnea', f_a, Pxx_a)]:
                 p_bl = potencia_en_banda(f, Pxx, 0, 0.5)
@@ -341,66 +268,3 @@ if 'a01' in segmentos:
         print('No encuentro a01.apn, salto la comparacion apnea/normal.')
 else:
     print('a01 no esta cargado, salto la comparacion apnea/normal.')
-
-
-# =============================================================================
-# Seccion 8: lectura del analisis y decisiones de filtrado
-# =============================================================================
-
-print()
-print('=' * 70)
-print('LECTURA DEL ANALISIS Y JUSTIFICACION DEL FILTRADO')
-print('=' * 70)
-print("""
-Lo que hay que mirar en los graficos / numeros de arriba:
-
-1) Baseline wander (0 - 0.5 Hz):
-   - Si en la PSD ves una "joroba" alta abajo del 0.5 Hz y/o el ratio BL/QRS
-     de la tabla es > ~0.3, hay que aplicar un PASA-ALTOS.
-   - Si el ratio queda << 0.1, el pasa-altos sigue siendo buena idea para
-     que Pan-Tompkins y el detector funcionen mejor, pero ya no es critico.
-   - La alternativa al pasa-altos (la que muestra la profe en clase) es
-     estimar la deriva con CUBIC SPLINES sobre los Q-onset y restarsela a
-     la señal. Las dos cosas son validas y se pueden comparar en el informe.
-
-2) Banda QRS (5 - 25 Hz):
-   - Es donde queremos PRESERVAR la energia. Cualquier filtro elegido tiene
-     que tener una banda de paso que cubra esto sin atenuacion.
-   - Para el DETECTOR de QRS (Pan-Tompkins) se usa una banda mas estrecha
-     (5 - 15 Hz). Eso es solo para el detector, no para el ECG que usamos
-     para visualizar / reportar.
-
-3) Red electrica (cerca de 50 Hz):
-   - Como Nyquist es 50 Hz, el adquisidor tuvo que filtrar antes. Si en el
-     zoom 35-50 Hz no se ve un pico angosto, no hace falta notch.
-   - Si igual aparece un pico en 50 Hz, agregamos un notch (sg.iirnotch).
-
-4) Apnea vs normal (a01):
-   - Esperamos PSDs parecidas en la banda del ECG: la modulacion por apnea
-     esta en la FC y su variabilidad, no en la forma del latido. Si las dos
-     PSDs son visualmente similares, el filtro generico es seguro y no
-     introduce sesgo entre clases.
-   - Si fueran muy distintas, habria que justificar mas finamente que el
-     filtro no afecta las features de HRV que usamos despues.
-
-DECISIONES PROPUESTAS (a confirmar mirando los graficos en tu corrida):
-
-   - Pasa-altos en 0.5 Hz, Butterworth orden 4, aplicado con filtfilt
-     (fase cero, no introduce retardo => no corre los QRS).
-     -> elimina baseline wander.
-
-   - Pasa-bajos en 40 Hz, Butterworth orden 4, con filtfilt.
-     -> atenua EMG residual y deja el QRS intacto.
-
-   - Notch en 50 Hz (iirnotch con Q=30): SOLO si en el zoom 35-50 Hz se ve
-     un pico angosto. Probable que no haga falta, pero lo dejamos disponible.
-
-   - Para el detector de QRS especificamente: banda 5 - 15 Hz (Pan-Tompkins
-     clasico). Esto va a un script aparte, no es el "ECG limpio" general.
-
-Todo esto va al script 03_preprocesamiento.py.
-""")
-
-print('=' * 70)
-print('Fin del analisis espectral.')
-print('=' * 70)

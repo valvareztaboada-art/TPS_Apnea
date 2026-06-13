@@ -1,15 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-src/pipeline.py
+Pipeline general para procesar registros de Apnea-ECG
 ================
 
-Pipeline reutilizable para Apnea-ECG: filtros del ECG + Pan-Tompkins +
-limpieza temporal de la serie RR. Sin side effects (no plots, no prints,
-no I/O de archivos al disco). Listo para ser usado desde:
-
-  - scripts batch (procesar_registro sobre los 70 sujetos)
-  - scripts exploratorios (03_preprocesamiento_y_qrs.py)
-  - una interfaz PySide6 (que carga el cache o procesa una senal subida)
+Pipeline  para Apnea-ECG: filtros del ECG + Pan-Tompkins +
+limpieza temporal de la serie RR. 
 
 Decisiones tecnicas y justificacion: ver scripts 02_analisis_espectral.py
 y 03_preprocesamiento_y_qrs.py.
@@ -40,10 +35,6 @@ PT_ADAPT_ALPHA = 0.3
 PT_GUARDA_BORDE_MS = 200
 # Ventana del umbral adaptativo LOCAL. El umbral se recalcula cada
 # PT_VENTANA_UMBRAL_SEG segundos y se suaviza para evitar saltos abruptos.
-# Sin esto, en registros donde la amplitud del QRS varia mucho a lo largo
-# de la noche (electrodos flojos, cambios posturales) el umbral global se
-# calibra a la zona de mayor amplitud y se pierden beats en las zonas de
-# menor amplitud (caso tipico: b03).
 PT_VENTANA_UMBRAL_SEG = 30
 PT_SUAVIZADO_UMBRAL_SEG = 5
 
@@ -119,7 +110,7 @@ def pt_detectar_picos(integrada, fs, refractario_ms=PT_REFRACTARIO_MS,
     Si el registro es muy corto para hacer ventanas, cae a un umbral global.
 
     Devuelve (picos, umbrales) donde `umbrales` es un array del mismo largo
-    que `integrada` con el umbral usado en cada muestra (util para graficar).
+    que `integrada` con el umbral usado en cada muestra.
     """
     N = len(integrada)
     distancia = int(refractario_ms * fs / 1000)
@@ -218,7 +209,7 @@ def filtro_rango_fisiologico(rr, rr_min=RR_MIN_FISIOL, rr_max=RR_MAX_FISIOL):
 
 
 def filtro_malik(rr, umbral=MALIK_UMBRAL):
-    """Filtro de cambio relativo (Task Force ESC/NASPE 1996)."""
+    """Filtro de cambio relativo."""
     out = np.zeros(len(rr), dtype=bool)
     for i in range(1, len(rr)):
         if rr[i-1] > 0 and abs(rr[i] - rr[i-1]) / rr[i-1] > umbral:
@@ -254,11 +245,6 @@ def interpolar_nan(rr):
 
 def limpiar_rr(rr):
     """Aplica los tres filtros y devuelve la serie limpia + los flags.
-
-    Returns
-    -------
-    rr_interp : np.ndarray con NaN reemplazados por interpolacion lineal
-    flags : dict con 'rango', 'malik', 'mediana' y 'total' (bool arrays)
     """
     flag_rango = filtro_rango_fisiologico(rr)
     flag_malik = filtro_malik(rr)
@@ -283,12 +269,6 @@ def limpiar_rr(rr):
 
 def cargar_ecg(record_name, data_dir, sampfrom=0, sampto=None):
     """Carga el ECG y los metadatos del registro.
-
-    Returns
-    -------
-    ecg : 1D array
-    fs : int
-    fields : dict (header de wfdb)
     """
     path = os.path.join(data_dir, record_name)
     if sampto is None:

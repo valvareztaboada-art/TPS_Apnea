@@ -1,0 +1,14 @@
+# Computacion cientifica
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+
+# Visualizacion (scripts 01-05)
+matplotlib>=3.6
+
+# Lectura de archivos PhysioNet (.dat, .hea, .apn, .qrs)
+wfdb>=4.1
+
+# Interfaz grafica interactiva (interfaz_apnea.py)
+PySide6>=6.5
+pyqtgraph>=0.13

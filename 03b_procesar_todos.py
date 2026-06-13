@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-03b_procesar_todos.py
+Procesamiento completo de TODOS los sujetos de Apnea-ECG
 ======================
 
 Procesa todos los registros de la base Apnea-ECG aplicando el pipeline
@@ -20,14 +20,8 @@ Salida que se guarda por sujeto (cache/<record>.npz):
   - flag_total       : OR de los anteriores
   - qrs_ref          : (si existen) anotaciones .qrs de la base
 
-No se guarda la senal cruda ni la filtrada (~20 MB por sujeto). Cuando se
-necesita (en la GUI o exploracion), se recalcula con pipeline.filtrar_ecg_general
-(es rapido: < 1 s por sujeto).
+No se guarda la senal cruda ni la filtrada.
 
-Uso:
-    python 03b_procesar_todos.py
-
-Opcional: para procesar solo un subconjunto, modificar SUBSET abajo.
 """
 
 import os
@@ -58,7 +52,7 @@ from src.pipeline import (
 DATA_DIR = 'apnea-ecg-database-1.0.0'
 CACHE_DIR = 'cache'
 
-# Para correr solo un subconjunto (debug), poner ej ['a01', 'a02', 'c01'].
+# Para correr solo un subconjunto, poner ej ['a01', 'a02', 'c01'].
 # Para procesar todo dejar en None.
 SUBSET = None
 

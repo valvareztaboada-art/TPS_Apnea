@@ -1,28 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-03_preprocesamiento_y_qrs.py
+Preprocesamiento + Pan-Tompkins + limpieza de RR (para un sujeto)
 =============================
 
 Script EXPLORATORIO sobre 1 sujeto. Usa las funciones del modulo
-src.pipeline (que contienen toda la logica del pipeline). El objetivo de
-este script es generar las figuras y mensajes que van al informe.
+src.pipeline. El objetivo de este script es generar las figuras y mensajes que van al informe.
 
 Para procesar TODOS los sujetos y llenar el cache/, ver 03b_procesar_todos.py.
 
-Pipeline aplicado:
-  A. Filtros del ECG: HP 0.5 Hz + LP 40 Hz Butter orden 4, filtfilt.
-  B. Pan-Tompkins (BP 5-15 Hz, derivada, cuadrado, integrador 150 ms),
-     deteccion con umbral adaptativo y refinamiento al pico R local.
-  C. Limpieza temporal de la serie RR: rango fisiologico + Malik + mediana
-     local, combinados con OR, e interpolacion lineal en los outliers.
-
-Nota metodologica: se exploraron tambien K-means K=2 + correlacion sobre la
-morfologia del QRS (metodos vistos en clase), pero no funcionan a 100 Hz
-porque la cuantizacion temporal del R (10 ms/muestra) "smear" el centroide
-del K-means y la correlacion individual. Ademas, no detectan APCs (que tienen
-morfologia normal). La limpieza temporal sobre RR es el estandar de la
-literatura HRV (Task Force ESC/NASPE 1996, papers de Apnea-ECG: Penzel 2000,
-de Chazal 2003, Mendez 2010). Se documenta esto en el informe.
 """
 
 import os
@@ -33,7 +18,6 @@ import scipy.signal as sg
 import matplotlib.pyplot as plt
 import wfdb
 
-# permitir importar src.pipeline cuando corras desde la raiz del proyecto
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
@@ -53,7 +37,7 @@ from src.pipeline import (
     filtro_rango_fisiologico, filtro_malik, filtro_mediana_local,
     interpolar_nan,
     limpiar_rr,
-    # constantes para mostrar en titulos / mensajes
+    # constantes 
     FC_PASAALTOS, FC_PASABAJOS, ORDEN_BUTTER,
     PT_BANDA_BAJA, PT_BANDA_ALTA, PT_VENTANA_INT_MS,
     PT_REFRACTARIO_MS, PT_ADAPT_ALPHA, PT_GUARDA_BORDE_MS,

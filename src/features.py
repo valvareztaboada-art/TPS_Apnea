@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-src/features.py
+Funciones para calcular features HRV y EDR por minuto 
 ================
 
 Calculo de features HRV por minuto, listo para detectar apnea.
-
-Las features siguen el estandar Task Force ESC/NASPE 1996 mas algunas
-especificas de la firma espectral de la apnea (CVHR).
 
 - Time-domain: ventana de 1 minuto (alineada con las anotaciones .apn que son
   por minuto).
@@ -14,6 +11,12 @@ especificas de la firma espectral de la apnea (CVHR).
   para resolver la banda LF que arranca en 0.04 Hz = 25 s de periodo).
 - PSD calculada con Lomb-Scargle (estandar para series no uniformemente
   sampleadas como RR).
+  - EDR (ECG-Derived Respiration): a partir de la amplitud de los picos R se
+  extrae una señal sustituta de la respiración. Se calcula su PSD (también
+  por Lomb-Scargle) y se obtienen potencias en la banda respiratoria normal
+  (0.15-0.40 Hz) y en una banda de modulación lenta asociada a apnea
+  (0.01-0.04 Hz), junto con sus versiones normalizadas y el ratio entre
+  ambas.
 """
 
 import numpy as np
@@ -25,7 +28,7 @@ from scipy.signal import lombscargle
 # Constantes: bandas espectrales
 # =============================================================================
 
-# Bandas estandar Task Force ESC/NASPE 1996
+# Bandas estandar 
 BAND_VLF = (0.0033, 0.04)    # Very Low Frequency
 BAND_LF = (0.04, 0.15)        # Low Frequency  (mayormente simpatico)
 BAND_HF = (0.15, 0.40)        # High Frequency (mayormente parasimpatico, respiratorio)
@@ -77,10 +80,7 @@ def features_tiempo(rr):
 def lomb_psd(rr, t_rr, f_min=0.003, f_max=0.5, n_freqs=256):
     """Periodograma de Lomb-Scargle de la serie RR.
 
-    Lomb-Scargle es la opcion estandar para series no uniformemente sampleadas
-    (cada RR viene a un instante distinto). Devuelve (f, psd) en Hz / unidades
-    arbitrarias de potencia.
-
+    Devuelve (f, psd) en Hz / unidades arbitrarias de potencia.
     Si hay muy pocos datos o el span temporal es chico, devuelve arrays vacios.
     """
     if len(rr) < 4 or (t_rr[-1] - t_rr[0]) < 30:
@@ -153,16 +153,6 @@ def features_frecuencia(rr, t_rr):
 # =============================================================================
 # EDR (ECG-Derived Respiration)
 # =============================================================================
-# La amplitud de los QRS se modula con la respiracion por dos razones fisicas:
-#  - al inhalar/exhalar cambia la posicion del corazon respecto al electrodo,
-#  - al inhalar/exhalar cambia la impedancia toracica.
-# Resultado: la serie de amplitudes de R (una por latido) contiene la senal
-# respiratoria. En un sujeto sano hay un pico claro en 0.15-0.4 Hz (12-24 rpm).
-# Durante un evento apneico:
-#  - cae la potencia respiratoria (no hay respiracion).
-#  - aparece un ciclo lento de ~0.01-0.04 Hz (apneas que se repiten cada
-#    30-60 s con la misma frecuencia que la CVHR en el RR).
-# Por eso EDR + HRV (RR) suelen ser complementarios para detectar apnea.
 
 # Bandas en la PSD del EDR
 BAND_EDR_RESP = (0.15, 0.40)    # respiratoria normal
@@ -174,15 +164,6 @@ def amplitudes_R(ecg_filtrado, picos_R, fs, ventana_ms=25):
 
     Toma el maximo en una ventana de +-ventana_ms alrededor de cada pico,
     para tolerar pequenas desalineaciones del detector.
-
-    Parameters
-    ----------
-    ecg_filtrado : np.ndarray
-        ECG con filtros pasaaltos + pasabajos aplicados (NO Pan-Tompkins).
-    picos_R : np.ndarray
-        Indices de los picos R.
-    fs : int
-        Frecuencia de muestreo.
 
     Returns
     -------
